@@ -1805,7 +1805,7 @@ public class AudioService extends IAudioService.Stub
                     return;
                 }
                 final String packageName = intent.getData() == null
-                        ? null : intent.getData().getEncodedSchemeSpecificPart();
+                        ? null : intent.getData().getSchemeSpecificPart();
                 final int uid = intent.getIntExtra(Intent.EXTRA_UID, INVALID_UID);
                 if (TextUtils.isEmpty(packageName) || uid == INVALID_UID) {
                     return;
@@ -5574,21 +5574,14 @@ public class AudioService extends IAudioService.Stub
         mPlaybackMonitor.disableAudioForUid(muted, uid);
     }
 
-    private void removePackageMuteStateForUser(@NonNull String packageName, int userId) {
-        removePackageMuteStateForUser(packageName, userId,
-                resolvePackageUidForUser(packageName, userId));
-    }
-
     private void removePackageMuteStateForUser(@NonNull String packageName, int userId,
             @Nullable Integer uid) {
-        boolean changed = false;
         synchronized (mSettingsLock) {
             final ArraySet<String> mutedPackages = mMutedPackagesByUser.get(userId);
             if (mutedPackages == null) {
                 return;
             }
-            changed = mutedPackages.remove(packageName);
-            if (!changed) {
+            if (!mutedPackages.remove(packageName)) {
                 return;
             }
             persistMutedPackagesForUserLocked(userId);
@@ -5607,7 +5600,9 @@ public class AudioService extends IAudioService.Stub
             final String packageName = mutedPackages.valueAt(i);
             final Integer uid = resolvePackageUidForUser(packageName, userId);
             if (uid == null) {
-                removePackageMuteStateForUser(packageName, userId);
+                Log.i(TAG, "Removing stale muted package state for " + packageName
+                        + " userId=" + userId);
+                removePackageMuteStateForUser(packageName, userId, null);
                 continue;
             }
             mPlaybackMonitor.disableAudioForUid(true, uid);
