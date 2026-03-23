@@ -271,4 +271,45 @@ public class AudioServiceTest {
         mAudioService.setRttEnabled(false);
         Assert.assertFalse(mAudioService.isRttEnabled());
     }
+
+    @Test
+    public void testPackageAudioMuted() throws Exception {
+        Log.i(TAG, "running testPackageAudioMuted");
+        Assert.assertNotNull(mAudioService);
+        final int userId = UserHandle.getCallingUserId();
+        final String packageName = mContext.getOpPackageName();
+
+        mAudioService.setPackageAudioMuted(packageName, true, userId);
+        Assert.assertTrue(mAudioService.isPackageAudioMuted(packageName, userId));
+
+        mAudioService.setPackageAudioMuted(packageName, false, userId);
+        Assert.assertFalse(mAudioService.isPackageAudioMuted(packageName, userId));
+    }
+
+    @Test
+    public void testPackageAudioMutedWithCurrentUser() throws Exception {
+        Log.i(TAG, "running testPackageAudioMutedWithCurrentUser");
+        Assert.assertNotNull(mAudioService);
+        final String packageName = mContext.getOpPackageName();
+        final int currentUserId = UserHandle.getCallingUserId();
+
+        mAudioService.setPackageAudioMuted(packageName, true, UserHandle.USER_CURRENT);
+        Assert.assertTrue(mAudioService.isPackageAudioMuted(packageName, currentUserId));
+
+        mAudioService.setPackageAudioMuted(packageName, false, UserHandle.USER_CURRENT);
+        Assert.assertFalse(mAudioService.isPackageAudioMuted(packageName, currentUserId));
+    }
+
+    @Test
+    public void testPackageAudioMutedUnknownPackageThrows() throws Exception {
+        Log.i(TAG, "running testPackageAudioMutedUnknownPackageThrows");
+        Assert.assertNotNull(mAudioService);
+        try {
+            mAudioService.setPackageAudioMuted("not.installed.package", true,
+                    UserHandle.getCallingUserId());
+            Assert.fail("Expected IllegalArgumentException for unknown package");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+    }
 }

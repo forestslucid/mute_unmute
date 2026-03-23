@@ -1172,6 +1172,47 @@ public class AudioManager {
     }
 
     /**
+     * Mutes or unmutes all audio output from the given package for the specified user.
+     *
+     * <p>This is a system API intended for privileged/system callers.
+     *
+     * @param packageName the target package name
+     * @param muted {@code true} to mute the package, {@code false} to unmute it
+     * @param userId target user id, or {@link UserHandle#USER_CURRENT}
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(Manifest.permission.MANAGE_APP_AUDIO_MUTE)
+    public void setPackageAudioMuted(@NonNull String packageName, boolean muted, int userId) {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        final IAudioService service = getService();
+        try {
+            service.setPackageAudioMuted(packageName, muted, userId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Returns whether the given package is currently muted for the specified user.
+     *
+     * @param packageName the target package name
+     * @param userId target user id, or {@link UserHandle#USER_CURRENT}
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(Manifest.permission.MANAGE_APP_AUDIO_MUTE)
+    public boolean isPackageAudioMuted(@NonNull String packageName, int userId) {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        final IAudioService service = getService();
+        try {
+            return service.isPackageAudioMuted(packageName, userId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Returns the current ringtone mode.
      *
      * @return The current ringtone mode, one of {@link #RINGER_MODE_NORMAL},
