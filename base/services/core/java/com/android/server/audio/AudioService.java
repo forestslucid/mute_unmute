@@ -15319,32 +15319,32 @@ public class AudioService extends IAudioService.Stub
         return activeAssistantUids;
     }
 
-    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     /** Mute audio playback for a specific UID. */
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     @Override
     public void muteAudioForUid(int uid) {
         super.muteAudioForUid_enforcePermission();
         mPlaybackMonitor.disableAudioForUid(true, uid);
     }
 
-    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     /** Unmute audio playback for a specific UID. */
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     @Override
     public void unmuteAudioForUid(int uid) {
         super.unmuteAudioForUid_enforcePermission();
         mPlaybackMonitor.disableAudioForUid(false, uid);
     }
 
-    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     /** Return whether audio playback is muted for a specific UID. */
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     @Override
     public boolean isAudioMutedForUid(int uid) {
         super.isAudioMutedForUid_enforcePermission();
         return mPlaybackMonitor.isAudioDisabledForUid(uid);
     }
 
-    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     /** Mute audio playback for a specific package/user pair. */
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     @Override
     public void muteAudioForPackage(@NonNull String packageName, @UserIdInt int userId) {
         super.muteAudioForPackage_enforcePermission();
@@ -15354,8 +15354,8 @@ public class AudioService extends IAudioService.Stub
         }
     }
 
-    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     /** Unmute audio playback for a specific package/user pair. */
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
     @Override
     public void unmuteAudioForPackage(@NonNull String packageName, @UserIdInt int userId) {
         super.unmuteAudioForPackage_enforcePermission();
@@ -15365,6 +15365,12 @@ public class AudioService extends IAudioService.Stub
         }
     }
 
+    /**
+     * Resolve the target UID for a package name scoped to a given user.
+     * Supports {@link UserHandle#USER_CURRENT} by resolving to the current foreground user.
+     * Returns {@link android.os.Process#INVALID_UID} if the user id is invalid or
+     * package cannot be found.
+     */
     private int resolveUidForPackage(@NonNull String packageName, @UserIdInt int userId) {
         Objects.requireNonNull(packageName, "packageName must not be null");
         final int resolvedUserId = userId == UserHandle.USER_CURRENT ? getCurrentUserId() : userId;
