@@ -206,6 +206,12 @@ public final class PlaybackActivityMonitor
         }
     }
 
+    public boolean isAudioDisabledForUid(int uid) {
+        synchronized (mPlayerLock) {
+            return mBannedUids.contains(uid);
+        }
+    }
+
     private boolean checkBanPlayer(@NonNull AudioPlaybackConfiguration apc, int uid) {
         final boolean toBan = (apc.getClientUid() == uid);
         if (toBan) {

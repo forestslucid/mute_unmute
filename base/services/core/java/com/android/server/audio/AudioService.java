@@ -15319,6 +15319,70 @@ public class AudioService extends IAudioService.Stub
         return activeAssistantUids;
     }
 
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
+    /** Mute audio playback for a specific UID. */
+    @Override
+    public void muteAudioForUid(int uid) {
+        super.muteAudioForUid_enforcePermission();
+        mPlaybackMonitor.disableAudioForUid(true, uid);
+    }
+
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
+    /** Unmute audio playback for a specific UID. */
+    @Override
+    public void unmuteAudioForUid(int uid) {
+        super.unmuteAudioForUid_enforcePermission();
+        mPlaybackMonitor.disableAudioForUid(false, uid);
+    }
+
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
+    /** Return whether audio playback is muted for a specific UID. */
+    @Override
+    public boolean isAudioMutedForUid(int uid) {
+        super.isAudioMutedForUid_enforcePermission();
+        return mPlaybackMonitor.isAudioDisabledForUid(uid);
+    }
+
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
+    /** Mute audio playback for a specific package/user pair. */
+    @Override
+    public void muteAudioForPackage(@NonNull String packageName, @UserIdInt int userId) {
+        super.muteAudioForPackage_enforcePermission();
+        final int uid = resolveUidForPackage(packageName, userId);
+        if (uid != INVALID_UID) {
+            mPlaybackMonitor.disableAudioForUid(true, uid);
+        }
+    }
+
+    @android.annotation.EnforcePermission(MODIFY_AUDIO_ROUTING)
+    /** Unmute audio playback for a specific package/user pair. */
+    @Override
+    public void unmuteAudioForPackage(@NonNull String packageName, @UserIdInt int userId) {
+        super.unmuteAudioForPackage_enforcePermission();
+        final int uid = resolveUidForPackage(packageName, userId);
+        if (uid != INVALID_UID) {
+            mPlaybackMonitor.disableAudioForUid(false, uid);
+        }
+    }
+
+    private int resolveUidForPackage(@NonNull String packageName, @UserIdInt int userId) {
+        Objects.requireNonNull(packageName, "packageName must not be null");
+        final int resolvedUserId = userId == UserHandle.USER_CURRENT ? getCurrentUserId() : userId;
+        if (resolvedUserId < 0) {
+            Log.w(TAG, "resolveUidForPackage invalid userId=" + userId
+                    + " package=" + packageName);
+            return INVALID_UID;
+        }
+        final PackageManager pm = mContext.getPackageManager();
+        try {
+            return pm.getPackageUidAsUser(packageName, resolvedUserId);
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.w(TAG, "resolveUidForPackage package not found: " + packageName
+                    + " userId=" + resolvedUserId);
+            return INVALID_UID;
+        }
+    }
+
     @Override
     /** @see AudioManager#permissionUpdateBarrier() */
     public void permissionUpdateBarrier() {

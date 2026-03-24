@@ -221,6 +221,37 @@ public class AudioServiceTest {
         }
     }
 
+    @Test
+    public void testMuteUnmuteAudioForUid() {
+        final int testUid = 12345;
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(testUid));
+        mAudioService.muteAudioForUid(testUid);
+        Assert.assertTrue(mAudioService.isAudioMutedForUid(testUid));
+        mAudioService.unmuteAudioForUid(testUid);
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(testUid));
+    }
+
+    @Test
+    public void testMuteUnmuteAudioForPackage() throws Exception {
+        final String packageName = mContext.getOpPackageName();
+        final int uid = mContext.getPackageManager().getPackageUidAsUser(
+                packageName, UserHandle.myUserId());
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(uid));
+        mAudioService.muteAudioForPackage(packageName, UserHandle.USER_CURRENT);
+        Assert.assertTrue(mAudioService.isAudioMutedForUid(uid));
+        mAudioService.unmuteAudioForPackage(packageName, UserHandle.USER_CURRENT);
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(uid));
+    }
+
+    @Test
+    public void testMuteAudioForUnknownPackageNoCrash() {
+        final String invalidPackageName = "com.android.server.audio.invalid.package";
+        final int testUid = 23456;
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(testUid));
+        mAudioService.muteAudioForPackage(invalidPackageName, UserHandle.USER_CURRENT);
+        Assert.assertFalse(mAudioService.isAudioMutedForUid(testUid));
+    }
+
     /** Test input gain index setter and getter */
     @EnableFlags(Flags.FLAG_ENABLE_AUDIO_INPUT_DEVICE_ROUTING_AND_VOLUME_CONTROL)
     @Test
