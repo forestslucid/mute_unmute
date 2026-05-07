@@ -27,6 +27,7 @@ import static android.Manifest.permission.MODIFY_AUDIO_ROUTING;
 import static android.Manifest.permission.MODIFY_AUDIO_SETTINGS;
 import static android.Manifest.permission.MODIFY_AUDIO_SETTINGS_PRIVILEGED;
 import static android.Manifest.permission.MODIFY_DEFAULT_AUDIO_EFFECTS;
+import static android.Manifest.permission.MANAGE_APP_AUDIO_MUTE;
 import static android.Manifest.permission.MODIFY_PHONE_STATE;
 import static android.Manifest.permission.QUERY_AUDIO_STATE;
 import static android.Manifest.permission.WRITE_SETTINGS;
@@ -585,6 +586,9 @@ public class AudioService extends IAudioService.Stub
 
     // protects mRingerMode
     private final Object mSettingsLock = new Object();
+    private static final String APP_AUDIO_MUTE_PACKAGES_SETTING = "app_audio_muted_packages";
+    @GuardedBy("mSettingsLock")
+    private final ArrayMap<Integer, ArraySet<String>> mMutedPackagesByUser = new ArrayMap<>();
 
     // protects VolumeStreamState / VolumeGroupState operations
     private final Object mVolumeStateLock = new Object();
@@ -1790,6 +1794,26 @@ public class AudioService extends IAudioService.Stub
         mContext.registerReceiverAsUser(mReceiver, UserHandle.ALL, intentFilter, null,
                 mBroadcastHandlerThread.getThreadHandler(),
                 Context.RECEIVER_EXPORTED);
+
+        IntentFilter packageRemovedFilter = new IntentFilter(Intent.ACTION_PACKAGE_REMOVED);
+        packageRemovedFilter.addDataScheme("package");
+        mContext.registerReceiverAsUser(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent.getBooleanExtra(EXTRA_REPLACING, false)
+                        || intent.getBooleanExtra(EXTRA_ARCHIVAL, false)) {
+                    return;
+                }
+                final String packageName = intent.getData() == null
+                        ? null : intent.getData().getSchemeSpecificPart();
+                final int uid = intent.getIntExtra(Intent.EXTRA_UID, INVALID_UID);
+                if (TextUtils.isEmpty(packageName) || uid == INVALID_UID) {
+                    return;
+                }
+                removePackageMuteStateForUser(packageName, UserHandle.getUserId(uid), uid);
+            }
+        }, UserHandle.ALL, packageRemovedFilter, null,
+                mBroadcastHandlerThread.getThreadHandler(), Context.RECEIVER_EXPORTED);
 
         SubscriptionManager subscriptionManager = mContext.getSystemService(
                 SubscriptionManager.class);
@@ -3218,6 +3242,10 @@ public class AudioService extends IAudioService.Stub
             if (mRingerModeExternal == -1) {
                 mRingerModeExternal = mRingerMode;
             }
+            final int currentUserId = getCurrentUserId();
+            mMutedPackagesByUser.put(currentUserId,
+                    parseMutedPackageSet(mSettings.getSecureStringForUser(mContentResolver,
+                            APP_AUDIO_MUTE_PACKAGES_SETTING, currentUserId)));
 
             // System.VIBRATE_ON is not used any more but defaults for mVibrateSetting
             // are still needed while setVibrateSetting() and getVibrateSetting() are being
@@ -3238,6 +3266,7 @@ public class AudioService extends IAudioService.Stub
             updateAssistantUIdLocked(/* forceUpdate= */ true);
             resetActiveAssistantUidsLocked();
         }
+        applyMutedPackagesForUser(getCurrentUserId());
 
         AudioSystem.setRttEnabled(mRttEnabled.get());
 
@@ -5471,6 +5500,115 @@ public class AudioService extends IAudioService.Stub
         return UserHandle.USER_SYSTEM;
     }
 
+    @GuardedBy("mSettingsLock")
+    private static @NonNull ArraySet<String> parseMutedPackageSet(@Nullable String persistedValue) {
+        final ArraySet<String> mutedPackages = new ArraySet<>();
+        if (TextUtils.isEmpty(persistedValue)) {
+            return mutedPackages;
+        }
+        final String[] entries = TextUtils.split(persistedValue, ",");
+        for (String entry : entries) {
+            if (!TextUtils.isEmpty(entry)) {
+                mutedPackages.add(entry);
+            }
+        }
+        return mutedPackages;
+    }
+
+    @GuardedBy("mSettingsLock")
+    private static @NonNull String serializeMutedPackageSet(@NonNull ArraySet<String> mutedPackages) {
+        return TextUtils.join(",", mutedPackages);
+    }
+
+    @GuardedBy("mSettingsLock")
+    private @NonNull ArraySet<String> getOrCreateMutedPackageSetForUserLocked(int userId) {
+        ArraySet<String> mutedPackages = mMutedPackagesByUser.get(userId);
+        if (mutedPackages == null) {
+            mutedPackages = new ArraySet<>();
+            mMutedPackagesByUser.put(userId, mutedPackages);
+        }
+        return mutedPackages;
+    }
+
+    private int resolveTargetUserId(int userId) {
+        if (userId == UserHandle.USER_CURRENT) {
+            return getCurrentUserId();
+        }
+        return userId;
+    }
+
+    private @Nullable Integer resolvePackageUidForUser(@NonNull String packageName, int userId) {
+        try {
+            return mContext.getPackageManager().getPackageUidAsUser(packageName, userId);
+        } catch (PackageManager.NameNotFoundException e) {
+            return null;
+        }
+    }
+
+    @GuardedBy("mSettingsLock")
+    private void persistMutedPackagesForUserLocked(int userId) {
+        final ArraySet<String> mutedPackages = getOrCreateMutedPackageSetForUserLocked(userId);
+        mSettings.putSecureStringForUser(mContentResolver, APP_AUDIO_MUTE_PACKAGES_SETTING,
+                serializeMutedPackageSet(mutedPackages), userId);
+    }
+
+    private void setPackageAudioMutedForUserInternal(@NonNull String packageName, boolean muted,
+            int userId) {
+        if (userId < UserHandle.USER_SYSTEM) {
+            throw new IllegalArgumentException("Invalid userId " + userId);
+        }
+        final Integer uid = resolvePackageUidForUser(packageName, userId);
+        if (uid == null) {
+            throw new IllegalArgumentException("Unknown package " + packageName + " for user "
+                    + userId);
+        }
+        synchronized (mSettingsLock) {
+            final ArraySet<String> mutedPackages = getOrCreateMutedPackageSetForUserLocked(userId);
+            final boolean changed = muted ? mutedPackages.add(packageName)
+                    : mutedPackages.remove(packageName);
+            if (!changed) {
+                return;
+            }
+            persistMutedPackagesForUserLocked(userId);
+        }
+        mPlaybackMonitor.disableAudioForUid(muted, uid);
+    }
+
+    private void removePackageMuteStateForUser(@NonNull String packageName, int userId,
+            @Nullable Integer uid) {
+        synchronized (mSettingsLock) {
+            final ArraySet<String> mutedPackages = mMutedPackagesByUser.get(userId);
+            if (mutedPackages == null) {
+                return;
+            }
+            if (!mutedPackages.remove(packageName)) {
+                return;
+            }
+            persistMutedPackagesForUserLocked(userId);
+        }
+        if (uid != null) {
+            mPlaybackMonitor.disableAudioForUid(false, uid);
+        }
+    }
+
+    private void applyMutedPackagesForUser(int userId) {
+        final ArraySet<String> mutedPackages;
+        synchronized (mSettingsLock) {
+            mutedPackages = new ArraySet<>(getOrCreateMutedPackageSetForUserLocked(userId));
+        }
+        for (int i = 0; i < mutedPackages.size(); i++) {
+            final String packageName = mutedPackages.valueAt(i);
+            final Integer uid = resolvePackageUidForUser(packageName, userId);
+            if (uid == null) {
+                Log.i(TAG, "Removing stale muted package state for " + packageName
+                        + " userId=" + userId);
+                removePackageMuteStateForUser(packageName, userId, null);
+                continue;
+            }
+            mPlaybackMonitor.disableAudioForUid(true, uid);
+        }
+    }
+
     // UI update and Broadcast Intent
     protected void sendVolumeUpdate(int streamType, int oldIndex, int index, int flags, int device)
     {
@@ -5717,6 +5855,26 @@ public class AudioService extends IAudioService.Stub
 
         setMasterMuteInternal(mute, flags, callingPackage,
                 Binder.getCallingUid(), userId, Binder.getCallingPid(), attributionTag);
+    }
+
+    @Override
+    @android.annotation.EnforcePermission(MANAGE_APP_AUDIO_MUTE)
+    public void setPackageAudioMuted(@NonNull String packageName, boolean muted, int userId) {
+        super.setPackageAudioMuted_enforcePermission();
+        Objects.requireNonNull(packageName);
+        setPackageAudioMutedForUserInternal(packageName, muted, resolveTargetUserId(userId));
+    }
+
+    @Override
+    @android.annotation.EnforcePermission(MANAGE_APP_AUDIO_MUTE)
+    public boolean isPackageAudioMuted(@NonNull String packageName, int userId) {
+        super.isPackageAudioMuted_enforcePermission();
+        Objects.requireNonNull(packageName);
+        final int resolvedUserId = resolveTargetUserId(userId);
+        synchronized (mSettingsLock) {
+            final ArraySet<String> mutedPackages = mMutedPackagesByUser.get(resolvedUserId);
+            return mutedPackages != null && mutedPackages.contains(packageName);
+        }
     }
 
     /** @see AudioManager#getStreamVolume(int) */
@@ -10759,6 +10917,7 @@ public class AudioService extends IAudioService.Stub
                 sendEnabledSurroundFormats(mContentResolver, mSurroundModeChanged);
                 updateAssistantUIdLocked(/* forceUpdate= */ false);
             }
+            applyMutedPackagesForUser(getCurrentUserId());
         }
 
         private void updateEncodedSurroundOutput() {
