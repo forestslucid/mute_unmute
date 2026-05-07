@@ -139,6 +139,21 @@ interface IAudioService {
     void setMasterMute(boolean mute, int flags, String callingPackage, int userId,
             in String attributionTag);
 
+    @EnforcePermission("MODIFY_AUDIO_ROUTING")
+    void muteAudioForUid(int uid);
+
+    @EnforcePermission("MODIFY_AUDIO_ROUTING")
+    void unmuteAudioForUid(int uid);
+
+    @EnforcePermission("MODIFY_AUDIO_ROUTING")
+    boolean isAudioMutedForUid(int uid);
+
+    @EnforcePermission("MODIFY_AUDIO_ROUTING")
+    void muteAudioForPackage(in String packageName, int userId);
+
+    @EnforcePermission("MODIFY_AUDIO_ROUTING")
+    void unmuteAudioForPackage(in String packageName, int userId);
+
     @UnsupportedAppUsage
     int getStreamVolume(int streamType);
 
